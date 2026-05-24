@@ -1708,6 +1708,8 @@ PRIVATE
     settings/sections/settings_local_passcode.h
     settings/sections/settings_main.cpp
     settings/sections/settings_main.h
+    settings/sections/settings_tdata_import.cpp
+    settings/sections/settings_tdata_import.h
     settings/settings_recent_searches.cpp
     settings/settings_recent_searches.h
     settings/settings_search.cpp

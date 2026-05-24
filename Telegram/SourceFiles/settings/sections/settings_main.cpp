@@ -57,6 +57,7 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "settings/settings_power_saving.h"
 #include "settings/sections/settings_premium.h"
 #include "settings/sections/settings_privacy_security.h"
+#include "settings/sections/settings_tdata_import.h"
 #include "settings/settings_scale_preview.h"
 #include "storage/localstorage.h"
 #include "ui/basic_click_handlers.h"
@@ -660,6 +661,9 @@ void Main::fillTopBarMenu(const Ui::Menu::MenuCallback &addAction) {
 	if (list.size() < Core::App().domain().maxAccounts()) {
 		addAction(tr::lng_menu_add_account(tr::now), [=] {
 			Core::App().domain().addActivated(MTP::Environment{});
+		}, &st::menuIconAddAccount);
+		addAction(u"Import account from tdata"_q, [=] {
+			ShowImportTdataBox(controller());
 		}, &st::menuIconAddAccount);
 	}
 	if (!controller()->session().supportMode()) {
