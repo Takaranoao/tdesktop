@@ -315,6 +315,45 @@ not_null<Main::Account*> Domain::add(MTP::Environment environment) {
 	return account;
 }
 
+Main::Account *Domain::importAccount(
+		const QByteArray &mtpAuthorization,
+		uint64 userId) {
+	Expects(started());
+
+	// Deduplication (invariant 5): skip if a logged-in account has the same userId.
+	for (const auto &[index, account] : _accounts) {
+		if (account->sessionExists()
+			&& account->session().userId().bare == userId) {
+			return nullptr;
+		}
+	}
+	if (int(_accounts.size()) >= maxAccounts()) {
+		return nullptr;
+	}
+
+	// Allocate a free index (same logic as add()).
+	auto index = 0;
+	while (ranges::contains(_accounts, index, &AccountWithIndex::index)) {
+		++index;
+	}
+	_accounts.push_back(AccountWithIndex{
+		.index = index,
+		.account = std::make_unique<Account>(this, _dataName, index),
+	});
+	const auto account = _accounts.back().account.get();
+
+	// Inject the auth key, then prepare storage with the target localKey and start.
+	account->setMtpAuthorization(mtpAuthorization);
+	_local->startAdded(
+		account,
+		std::make_unique<MTP::Config>(MTP::Environment::Production));
+
+	watchSession(account);
+	_accountsChanges.fire({});
+	scheduleWriteAccounts();
+	return account;
+}
+
 void Domain::addActivated(MTP::Environment environment, bool newWindow) {
 	const auto added = [&](not_null<Main::Account*> account) {
 		if (newWindow) {

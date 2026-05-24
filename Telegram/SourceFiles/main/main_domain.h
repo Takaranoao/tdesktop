@@ -74,6 +74,13 @@ public:
 	void activate(not_null<Main::Account*> account);
 	void addActivated(MTP::Environment environment, bool newWindow = false);
 
+	// Import an account from a serializeMtpAuthorization() blob.
+	// Returns the new account, or nullptr if the userId already exists
+	// or the account limit has been reached.
+	Main::Account *importAccount(
+		const QByteArray &mtpAuthorization,
+		uint64 userId);
+
 	// Interface for Storage::Domain.
 	void accountAddedInStorage(AccountWithIndex accountWithIndex);
 	void activateFromStorage(int index);
