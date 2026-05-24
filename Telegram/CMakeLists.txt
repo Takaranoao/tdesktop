@@ -1769,6 +1769,8 @@ PRIVATE
     storage/storage_cloud_blob.h
     storage/storage_domain.cpp
     storage/storage_domain.h
+    storage/storage_tdata_import.cpp
+    storage/storage_tdata_import.h
     storage/storage_facade.cpp
     storage/storage_facade.h
     storage/storage_media_prepare.cpp
