@@ -11,6 +11,8 @@ https://github.com/telegramdesktop/tdesktop/blob/master/LEGAL
 #include "storage/details/storage_settings_scheme.h"
 #include "storage/serialize_common.h"
 
+#include "base/flat_set.h"
+
 namespace Storage {
 namespace {
 
@@ -49,14 +51,18 @@ constexpr auto kPremiumMaxAccounts = 99;
 // Format: [quint64 kWideIdsTag][quint64 userId][qint32 mainDcId]...
 // Legacy fallback: [qint32 legacyUserId][qint32 mainDcId]...
 [[nodiscard]] uint64 ReadUserIdFromBlob(const QByteArray &serialized) {
+	constexpr auto kWideIdsTag = ~uint64(0);
 	QDataStream stream(serialized);
 	stream.setVersion(QDataStream::Qt_5_1);
-	const auto legacyUserId  = Serialize::read<qint32>(stream);
+	const auto legacyUserId = Serialize::read<qint32>(stream);
 	const auto legacyMainDcId = Serialize::read<qint32>(stream);
-	constexpr auto kWideIdsTag = ~uint64(0);
+	if (stream.status() != QDataStream::Ok) {
+		return 0;
+	}
 	if (((uint64(legacyUserId) << 32) | uint64(legacyMainDcId))
 		== kWideIdsTag) {
-		return Serialize::read<quint64>(stream); // wide userId
+		const auto userId = Serialize::read<quint64>(stream);
+		return (stream.status() == QDataStream::Ok) ? userId : uint64(0);
 	}
 	return uint64(legacyUserId); // legacy 32-bit userId
 }
@@ -165,6 +171,9 @@ TdataImportResult ReadTdataAccounts(
 	}
 	auto indices = std::vector<int>();
 	indices.reserve(count);
+	// Mirror startModern's `tried` set (storage_domain.cpp:170-178): an index
+	// may appear more than once — only read each account's mtp file once.
+	auto tried = base::flat_set<int>();
 	for (auto i = 0; i != count; ++i) {
 		auto index = qint32();
 		info.stream >> index;
@@ -172,7 +181,9 @@ TdataImportResult ReadTdataAccounts(
 			result.error = TdataImportError::Corrupted;
 			return result;
 		}
-		if (index >= 0 && index < kPremiumMaxAccounts) {
+		if (index >= 0
+			&& index < kPremiumMaxAccounts
+			&& tried.emplace(index).second) {
 			indices.push_back(index);
 		}
 	}
