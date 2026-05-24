@@ -65,19 +65,32 @@ namespace {
 	return { imported, skipped };
 }
 
+// SessionController is destroyed and recreated when the active session
+// switches (account switch / current account disconnect), while a box lives on
+// the window and can outlive that recreation. So every deferred callback below
+// holds a weak_ptr to the controller and re-acquires a strong pointer (with an
+// early return on failure) before touching it.
 void ShowResult(
-		not_null<Window::SessionController*> controller,
+		base::weak_ptr<Window::SessionController> weak,
 		int imported,
 		int skipped) {
+	const auto strong = weak.get();
+	if (!strong) {
+		return;
+	}
 	const auto text = u"Imported %1 account(s), skipped %2."_q
 		.arg(imported)
 		.arg(skipped);
-	controller->show(Ui::MakeInformBox(text));
+	strong->show(Ui::MakeInformBox(text));
 }
 
 void ShowImportConfirm(
-		not_null<Window::SessionController*> controller,
+		base::weak_ptr<Window::SessionController> weak,
 		std::vector<Storage::ImportedAccount> accounts) {
+	const auto strong = weak.get();
+	if (!strong) {
+		return;
+	}
 	const auto count = int(accounts.size());
 	const auto text = u"Found %1 account(s) to import.\n\n"
 		"Importing copies the session into this app. Do NOT keep using the "
@@ -85,12 +98,16 @@ void ShowImportConfirm(
 		"side may get disconnected."_q.arg(count);
 	const auto shared = std::make_shared<
 		std::vector<Storage::ImportedAccount>>(std::move(accounts));
-	controller->show(Ui::MakeConfirmBox({
+	strong->show(Ui::MakeConfirmBox({
 		.text = text,
 		.confirmed = [=](Fn<void()> &&close) {
+			const auto strong = weak.get();
+			if (!strong) {
+				return;
+			}
 			const auto result = DoImport(*shared);
 			close();
-			ShowResult(controller, result.first, result.second);
+			ShowResult(weak, result.first, result.second);
 		},
 		.confirmText = u"Import"_q,
 		.title = u"Import accounts from tdata"_q,
@@ -99,39 +116,47 @@ void ShowImportConfirm(
 
 // Forward declaration: the passcode box can re-trigger itself on a wrong try.
 void ShowPasscodeBox(
-	not_null<Window::SessionController*> controller,
+	base::weak_ptr<Window::SessionController> weak,
 	QString dir,
 	bool wrongPrevious);
 
 // Reads the source folder with the given passcode and dispatches to the right
 // box depending on the resulting error.
 void HandleRead(
-		not_null<Window::SessionController*> controller,
+		base::weak_ptr<Window::SessionController> weak,
 		const QString &dir,
 		const QByteArray &passcode) {
+	const auto strong = weak.get();
+	if (!strong) {
+		return;
+	}
 	auto result = Storage::ReadTdataAccounts(dir, passcode);
 	switch (result.error) {
 	case Storage::TdataImportError::None:
-		ShowImportConfirm(controller, std::move(result.accounts));
+		ShowImportConfirm(weak, std::move(result.accounts));
 		return;
 	case Storage::TdataImportError::NeedPasscode:
-		ShowPasscodeBox(controller, dir, false);
+		ShowPasscodeBox(weak, dir, false);
 		return;
 	case Storage::TdataImportError::WrongPasscode:
-		ShowPasscodeBox(controller, dir, true);
+		ShowPasscodeBox(weak, dir, true);
 		return;
 	case Storage::TdataImportError::NotATdataFolder:
 	case Storage::TdataImportError::Corrupted:
-		controller->show(Ui::MakeInformBox(ErrorText(result.error)));
+		strong->show(Ui::MakeInformBox(ErrorText(result.error)));
 		return;
 	}
 }
 
 void ShowPasscodeBox(
-		not_null<Window::SessionController*> controller,
+		base::weak_ptr<Window::SessionController> weak,
 		QString dir,
 		bool wrongPrevious) {
-	controller->show(Box([=](not_null<Ui::GenericBox*> box) {
+	const auto strong = weak.get();
+	if (!strong) {
+		return;
+	}
+	strong->show(Box([=](not_null<Ui::GenericBox*> box) {
 		box->setTitle(rpl::single(u"Local passcode"_q));
 
 		box->addRow(object_ptr<Ui::FlatLabel>(
@@ -165,7 +190,9 @@ void ShowPasscodeBox(
 		const auto submit = [=] {
 			const auto passcode = field->getLastText().toUtf8();
 			box->closeBox();
-			HandleRead(controller, dir, passcode);
+			// HandleRead re-checks weak itself, but read the passcode and
+			// close the box first regardless.
+			HandleRead(weak, dir, passcode);
 		};
 		QObject::connect(
 			field,
@@ -186,11 +213,8 @@ void ShowImportTdataBox(not_null<Window::SessionController*> controller) {
 		if (result.isEmpty()) {
 			return;
 		}
-		const auto strong = weak.get();
-		if (!strong) {
-			return;
-		}
-		HandleRead(strong, result, QByteArray());
+		// HandleRead re-acquires a strong controller (or bails) internally.
+		HandleRead(weak, result, QByteArray());
 	};
 	FileDialog::GetFolder(
 		parent,
