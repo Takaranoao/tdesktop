@@ -320,6 +320,13 @@ Main::Account *Domain::importAccount(
 		uint64 userId) {
 	Expects(started());
 
+	// A blob whose userId could not be determined cannot become a valid account:
+	// startMtp only creates a session when _sessionUserId != 0, otherwise the
+	// account is silently dropped by removeRedundantAccounts. Count it as skipped.
+	if (!userId) {
+		return nullptr;
+	}
+
 	// Deduplication (invariant 5): skip if a logged-in account has the same userId.
 	for (const auto &[index, account] : _accounts) {
 		if (account->sessionExists()
